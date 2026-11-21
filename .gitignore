@@ -1,0 +1,44 @@
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.sqlite3
+*.db
+backend/data/*.db
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Ultralytics & Runs
+.ultralytics/
+runs/
+*.pt
+
+# Node / React
+node_modules/
+dist/
+.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment & Mac OS
+.env
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Temporary Media
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/processed/*
+!backend/processed/.gitkeep
+backend/reports/*
+!backend/reports/.gitkeep
