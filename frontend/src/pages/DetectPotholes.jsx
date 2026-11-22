@@ -229,10 +229,11 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap, onOpen
       {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-white tracking-tight flex items-center gap-2">
+          <h1 className="text-2xl font-black text-white tracking-tight flex flex-wrap items-center gap-2">
             <span>AI Road Vision Studio</span>
-            <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 text-xs font-semibold">
-              YOLOv8 Neural Core
+            <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              Dual-Engine WBF Fusion (CLAHE + PeterHdd & Samdutse)
             </span>
           </h1>
           <p className="text-sm text-slate-400 mt-1">
@@ -642,10 +643,11 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap, onOpen
                         <tr className="bg-slate-900/90 border-b border-slate-800 text-slate-400 font-semibold uppercase text-[10px]">
                           <th className="py-2.5 px-3">#</th>
                           <th className="py-2.5 px-3">Severity</th>
-                          <th className="py-2.5 px-3">Confidence</th>
-                          <th className="py-2.5 px-3">Frame Area Ratio</th>
+                          <th className="py-2.5 px-3">Confidence & Consensus</th>
+                          <th className="py-2.5 px-3">Est. Ø (cm)</th>
+                          <th className="py-2.5 px-3">Depth Profile</th>
                           <th className="py-2.5 px-3">Est. Dimensions</th>
-                          <th className="py-2.5 px-3">Bounding Box (X1, Y1, X2, Y2)</th>
+                          <th className="py-2.5 px-3">Bounding Box</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800/60 font-mono">
@@ -662,11 +664,23 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap, onOpen
                             <td className="py-2.5 px-3 font-sans">
                               <SeverityBadge severity={d.severity} size="sm" />
                             </td>
-                            <td className="py-2.5 px-3 text-cyan-400 font-bold">
-                              {Math.round(d.confidence * 100)}%
+                            <td className="py-2.5 px-3 font-sans">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-cyan-400 font-bold font-mono">
+                                  {Math.round(d.confidence * 100)}%
+                                </span>
+                                {d.dual_confirmed && (
+                                  <span className="px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[9px] font-bold">
+                                    ★ DUAL AI
+                                  </span>
+                                )}
+                              </div>
                             </td>
-                            <td className="py-2.5 px-3 text-slate-300">
-                              {(d.area_ratio * 100).toFixed(2)}%
+                            <td className="py-2.5 px-3 text-amber-300 font-bold font-mono">
+                              ~{Math.round(d.estimated_diameter_cm || (d.estimated_width_px * 0.25))} cm
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-300 font-sans text-[11px]">
+                              {d.depth_category || "Moderate (3-6 cm)"}
                             </td>
                             <td className="py-2.5 px-3 text-slate-300 font-sans">
                               {Math.round(d.estimated_width_px)} × {Math.round(d.estimated_height_px)} px

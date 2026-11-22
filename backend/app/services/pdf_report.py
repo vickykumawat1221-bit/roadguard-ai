@@ -167,32 +167,33 @@ def generate_pdf_report(detection_data: dict, output_pdf_path: str):
     elements.append(Spacer(1, 12))
 
     # 5. Pothole Inventory Table
-    elements.append(Paragraph("Detected Pothole Inventory", section_heading))
+    elements.append(Paragraph("Detected Pothole Inventory & Perspective Calibration", section_heading))
     details = detection_data.get('details', [])
     
     table_rows = [
-        ["#", "Severity", "Confidence", "Area Ratio", "Est. Box Size (WxH)", "Recommended Action"]
+        ["#", "Severity", "Confidence", "Est. Ø (cm)", "Cavity Depth", "Recommended Action"]
     ]
 
     if details:
         for i, item in enumerate(details, start=1):
             sev_item = item.get('severity', 'LOW')
             conf_pct = f"{int(item.get('confidence', 0) * 100)}%"
-            area_pct = f"{item.get('area_ratio', 0) * 100:.2f}%"
-            dims = f"{int(item.get('estimated_width_px', 0))} x {int(item.get('estimated_height_px', 0))} px"
+            diam = item.get('estimated_diameter_cm') or item.get('bounding_box', {}).get('estimated_diameter_cm', round(item.get('estimated_width_px', 0) * 0.25, 1))
+            depth = item.get('depth_category') or item.get('bounding_box', {}).get('depth_category', 'Moderate (3-6 cm)')
+            diam_str = f"~{int(diam)} cm"
             
             if sev_item == 'HIGH':
-                action = "Emergency Asphalt Patching"
+                action = "Emergency Asphalt Patching (24h)"
             elif sev_item == 'MEDIUM':
                 action = "Scheduled Routine Resurfacing"
             else:
                 action = "Quarterly Monitoring"
 
-            table_rows.append([str(i), sev_item, conf_pct, area_pct, dims, action])
+            table_rows.append([str(i), sev_item, conf_pct, diam_str, depth, action])
     else:
-        table_rows.append(["-", "NONE", "100%", "0%", "N/A", "Road surface clear; no immediate repair needed"])
+        table_rows.append(["-", "NONE", "100%", "0 cm", "Surface Intact", "Road surface clear; no immediate repair needed"])
 
-    details_table = Table(table_rows, colWidths=[25, 65, 70, 75, 125, 180])
+    details_table = Table(table_rows, colWidths=[25, 65, 65, 75, 125, 185])
     details_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E293B')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),

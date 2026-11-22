@@ -379,7 +379,8 @@ export default function DetectionHistory({ onNavigateToMap }) {
                         <th className="py-2 px-3">#</th>
                         <th className="py-2 px-3">Severity</th>
                         <th className="py-2 px-3">Confidence</th>
-                        <th className="py-2 px-3">Area Ratio</th>
+                        <th className="py-2 px-3">Est. Ø (cm)</th>
+                        <th className="py-2 px-3">Depth Profile</th>
                         <th className="py-2 px-3">Box [X1, Y1, X2, Y2]</th>
                       </tr>
                     </thead>
@@ -393,11 +394,14 @@ export default function DetectionHistory({ onNavigateToMap }) {
                           <td className="py-2 px-3 text-cyan-400 font-bold">
                             {Math.round(d.confidence * 100)}%
                           </td>
-                          <td className="py-2 px-3 text-slate-300">
-                            {(d.area_ratio * 100).toFixed(2)}%
+                          <td className="py-2 px-3 text-amber-300 font-bold">
+                            ~{Math.round(d.estimated_diameter_cm || (d.estimated_width_px * 0.25))} cm
+                          </td>
+                          <td className="py-2 px-3 text-slate-300 font-sans text-[11px]">
+                            {d.depth_category || "Moderate (3-6 cm)"}
                           </td>
                           <td className="py-2 px-3 text-slate-400 text-[11px]">
-                            [{d.bounding_box?.xmin}, {d.bounding_box?.ymin}, {d.bounding_box?.xmax}, {d.bounding_box?.ymax}]
+                            [{Math.round(d.bounding_box?.xmin)}, {Math.round(d.bounding_box?.ymin)}, {Math.round(d.bounding_box?.xmax)}, {Math.round(d.bounding_box?.ymax)}]
                           </td>
                         </tr>
                       ))}

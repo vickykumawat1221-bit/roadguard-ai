@@ -35,10 +35,17 @@ if [ ! -d "$VENV_DIR" ]; then
 fi
 
 if [ ! -f "$BACKEND_DIR/weights/pothole_yolov8.pt" ]; then
-    echo "Pretrained weights not found. Downloading YOLOv8 pothole weights..."
+    echo "Primary YOLOv8 weights not found. Downloading PeterHdd checkpoint..."
     mkdir -p "$BACKEND_DIR/weights"
     python3 -c "import urllib.request; urllib.request.urlretrieve('https://huggingface.co/peterhdd/pothole-detection-yolov8/resolve/main/best.pt', '$BACKEND_DIR/weights/pothole_yolov8.pt')"
-    echo "Weights successfully downloaded."
+    echo "Primary weights successfully downloaded."
+fi
+
+if [ ! -f "$BACKEND_DIR/weights/pothole_samdutse.pt" ]; then
+    echo "Secondary YOLOv8 weights not found. Downloading Samdutse checkpoint..."
+    mkdir -p "$BACKEND_DIR/weights"
+    python3 -c "import urllib.request; urllib.request.urlretrieve('https://huggingface.co/samdutse/pothole-yolov8s/resolve/main/best.pt', '$BACKEND_DIR/weights/pothole_samdutse.pt')"
+    echo "Secondary weights successfully downloaded."
 fi
 
 # Cleanup on exit

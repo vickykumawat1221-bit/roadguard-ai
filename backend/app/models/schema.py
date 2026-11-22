@@ -11,6 +11,8 @@ class DetectionDetailSchema(BaseModel):
     area_ratio: float
     estimated_width_px: float
     estimated_height_px: float
+    estimated_diameter_cm: Optional[float] = 25.0
+    depth_category: Optional[str] = "Moderate (3-6 cm)"
 
     class Config:
         from_attributes = True

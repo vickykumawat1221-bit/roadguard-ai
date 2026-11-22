@@ -31,6 +31,14 @@ def format_detection_response(d: Detection, base_url: str = "") -> dict:
     details_list = []
     for detail in d.details:
         bbox = json.loads(detail.bounding_box) if isinstance(detail.bounding_box, str) else detail.bounding_box
+        
+        # Extract diameter and depth from bounding box dictionary or heuristic fallback
+        diam = 25.0
+        depth = "Moderate (3-6 cm)"
+        if isinstance(bbox, dict):
+            diam = bbox.get("estimated_diameter_cm", round(detail.estimated_width_px * 0.25, 1))
+            depth = bbox.get("depth_category", "Moderate (3-6 cm)")
+
         details_list.append({
             "id": detail.id,
             "detection_id": detail.detection_id,
@@ -40,6 +48,8 @@ def format_detection_response(d: Detection, base_url: str = "") -> dict:
             "area_ratio": detail.area_ratio,
             "estimated_width_px": detail.estimated_width_px,
             "estimated_height_px": detail.estimated_height_px,
+            "estimated_diameter_cm": diam,
+            "depth_category": depth
         })
 
     return {

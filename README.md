@@ -15,11 +15,14 @@ RoadGuard AI autonomously detects potholes and road surface cavities from dashbo
 
 ## 📌 Key Capabilities
 
-* **Actual Deep Learning Pipeline:** Employs a fine-tuned **YOLOv8s** neural network model trained on pothole distress datasets (not generic COCO weights).
+* **Dual-Engine Neural Ensemble (WBF + CLAHE):** Fuses predictions from two complementary fine-tuned YOLOv8 neural networks (`peterhdd` + `samdutse`) using Weighted Box Fusion, Lanczos-4 adaptive upsampling, and Contrast Limited Adaptive Histogram Equalization for high precision across both highway and complex urban pavements.
+* **Calibrated Ground-Plane Perspective Heuristics:** Translates 2D image coordinates into real-world physical diameter estimates ($\approx 15\text{cm} - 150\text{cm}$) and cavity depth categories (*Shallow*, *Moderate*, *Deep Hazardous*) via vanishing-point vertical perspective scaling.
+* **Municipal Decision Intelligence:** Features a Pavement Quality Index (PQI) radial gauge, real-time Bitumen & Cost Repair Budget Estimator, and Sector Damage Matrix.
+* **Municipal Patrol Simulator:** Cyberpunk dashcam inspection simulator with Web Audio radar sound effects and streaming frame-by-frame HUD tracking.
+* **Before / After Comparison Split Slider:** Interactive drag slider to inspect original road surface against AI cavity segmentation.
 * **Multi-Modal Detection:** Supports high-resolution static images, continuous video stream processing (MP4/AVI/MOV), and live browser webcam frame capture.
-* **Estimated Severity Classification:** Automatically categorizes damage into **LOW** (green), **MEDIUM** (amber), and **HIGH** (crimson red) based on bounding-box area occupancy and dimension heuristics.
-* **Geographical GIS Mapping:** Leaflet-powered spatial map with severity-colored pulse markers, interactive image cards, and browser Geolocation API integration (or manual coordinates).
-* **Automated PDF Inspection Reports:** Generates official public-works damage assessment reports using ReportLab with side-by-side evidence images and coordinate geometry.
+* **Geographical GIS Mapping:** CartoDB Dark Matter GIS map with severity pulse markers, interactive image cards, patrol routes, and browser Geolocation API integration.
+* **Automated PDF Inspection Reports:** Generates official public-works damage assessment reports using ReportLab with physical dimensions and work-order triage.
 * **Apple Silicon M2 / Low-Memory Optimization:** CPU/MPS inference under 70ms per frame, lightweight frame-stride video pipeline, and resident memory footprint under 350MB.
 
 ---

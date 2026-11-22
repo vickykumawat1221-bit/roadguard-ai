@@ -52,13 +52,16 @@ def health_check():
     """
     Health check endpoint reporting system status and AI model readiness.
     """
-    model_ready = detector_service._model is not None
+    models_count = len(detector_service._models)
+    is_ensemble = detector_service.is_ensemble_active
     return {
         "status": "healthy",
         "service": "RoadGuard AI Core Engine",
-        "version": "1.0.0",
-        "ai_model": "YOLOv8s Pothole Detector",
-        "model_loaded": model_ready,
+        "version": "2.0.0-hackathon-pro",
+        "ai_model": "Dual-Engine YOLOv8 Weighted Box Fusion (WBF + CLAHE)",
+        "model_loaded": models_count > 0,
+        "models_count": models_count,
+        "ensemble_active": is_ensemble,
         "runtime_device": "Apple Silicon CPU/MPS",
         "database": "SQLite (Persistent)",
         "timestamp": os.path.getmtime(os.path.join(BASE_DIR, "weights", "pothole_yolov8.pt")) if os.path.exists(os.path.join(BASE_DIR, "weights", "pothole_yolov8.pt")) else None

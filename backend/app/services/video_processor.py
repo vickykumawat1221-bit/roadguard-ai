@@ -28,7 +28,6 @@ class VideoProcessorService:
         orig_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         orig_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = cap.get(cv2.CAP_PROP_FPS) or 24.0
-        total_input_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
         # Output video naming
         base_name = Path(video_input_path).stem
@@ -51,7 +50,7 @@ class VideoProcessorService:
         best_thumb_potholes = -1
         best_pothole_details: List[Dict[str, Any]] = []
 
-        last_detections = [] # Cache detections for skipped frames
+        last_annotated_frame = None
 
         try:
             while cap.isOpened() and frame_idx < MAX_VIDEO_FRAMES:
@@ -61,88 +60,31 @@ class VideoProcessorService:
 
                 # Run inference on every N-th frame
                 if frame_idx % frame_stride == 0:
-                    results = detector_service._model(frame, conf=conf_threshold, verbose=False)
-                    boxes = results[0].boxes
-                    last_detections = []
+                    annotated_frame, details, frame_sev, frame_conf = detector_service.detect_frame(
+                        frame,
+                        conf_threshold=conf_threshold,
+                        annotate=True
+                    )
+                    last_annotated_frame = annotated_frame
 
-                    for box in boxes:
-                        xyxy = box.xyxy[0].cpu().numpy().tolist()
-                        conf = float(box.conf[0].cpu().numpy())
-                        sev_info = classify_pothole_severity(
-                            bbox=(xyxy[0], xyxy[1], xyxy[2], xyxy[3]),
-                            img_width=orig_w,
-                            img_height=orig_h
-                        )
-                        last_detections.append({
-                            "bbox": xyxy,
-                            "conf": conf,
-                            "severity": sev_info["severity"],
-                            "width_px": sev_info["width_px"],
-                            "height_px": sev_info["height_px"],
-                            "area_ratio": sev_info["area_ratio"]
-                        })
-                        all_severities.append(sev_info["severity"])
-                        conf_values.append(conf)
-
-                    frame_pothole_count = len(last_detections)
+                    frame_pothole_count = len(details)
                     if frame_pothole_count > peak_potholes_in_frame:
                         peak_potholes_in_frame = frame_pothole_count
 
                     total_potholes_encountered += frame_pothole_count
 
-                # Annotate current frame using current or cached detections
-                annotated_frame = frame.copy()
-                frame_severities = [d["severity"] for d in last_detections]
-                current_frame_sev = calculate_overall_severity(frame_severities)
+                    for d in details:
+                        all_severities.append(d["severity"])
+                        conf_values.append(d["confidence"])
 
-                for d in last_detections:
-                    xmin, ymin, xmax, ymax = d["bbox"]
-                    sev = d["severity"]
-                    color = SEVERITY_BGR_COLORS.get(sev, (0, 255, 255))
-                    cv2.rectangle(annotated_frame, (int(xmin), int(ymin)), (int(xmax), int(ymax)), color, 2)
-                    
-                    label = f"Pothole: {sev} ({int(d['conf'] * 100)}%)"
-                    cv2.putText(
-                        annotated_frame,
-                        label,
-                        (int(xmin), max(20, int(ymin) - 8)),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.5,
-                        color,
-                        2,
-                        cv2.LINE_AA
-                    )
-
-                # Add HUD banner
-                detector_service._draw_hud_banner(
-                    annotated_frame,
-                    len(last_detections),
-                    current_frame_sev,
-                    d["conf"] if last_detections else 0.0
-                )
-
-                # Save best keyframe for thumbnail
-                if len(last_detections) > best_thumb_potholes:
-                    best_thumb_potholes = len(last_detections)
-                    best_thumb_frame = annotated_frame.copy()
-                    best_pothole_details = [
-                        {
-                            "bounding_box": {
-                                "xmin": round(d["bbox"][0], 1),
-                                "ymin": round(d["bbox"][1], 1),
-                                "xmax": round(d["bbox"][2], 1),
-                                "ymax": round(d["bbox"][3], 1),
-                                "width": d["width_px"],
-                                "height": d["height_px"]
-                            },
-                            "confidence": round(d["conf"], 4),
-                            "severity": d["severity"],
-                            "area_ratio": d["area_ratio"],
-                            "estimated_width_px": d["width_px"],
-                            "estimated_height_px": d["height_px"]
-                        }
-                        for d in last_detections
-                    ]
+                    # Save best keyframe for thumbnail
+                    if frame_pothole_count > best_thumb_potholes:
+                        best_thumb_potholes = frame_pothole_count
+                        best_thumb_frame = annotated_frame.copy()
+                        best_pothole_details = details
+                else:
+                    # Write last annotated frame or current raw frame
+                    annotated_frame = last_annotated_frame if last_annotated_frame is not None else frame
 
                 out.write(annotated_frame)
                 frame_idx += 1
@@ -155,9 +97,15 @@ class VideoProcessorService:
         if best_thumb_frame is not None:
             cv2.imwrite(output_thumb_path, best_thumb_frame)
         else:
-            # fallback to black placeholder
-            dummy = 255 * (cv2.imread(video_input_path) is not None)
-            cv2.imwrite(output_thumb_path, dummy)
+            # Fallback frame
+            cap_fallback = cv2.VideoCapture(video_input_path)
+            ret_f, first_frame = cap_fallback.read()
+            cap_fallback.release()
+            if ret_f and first_frame is not None:
+                cv2.imwrite(output_thumb_path, first_frame)
+            else:
+                dummy = 255 * (cv2.imread(video_input_path) is not None)
+                cv2.imwrite(output_thumb_path, dummy)
 
         overall_severity = calculate_overall_severity(all_severities)
         avg_conf = round(sum(conf_values) / len(conf_values), 4) if conf_values else 0.0
@@ -172,7 +120,7 @@ class VideoProcessorService:
             "processed_image_filename": output_thumb_filename,
             "total_frames_processed": frame_idx,
             "peak_potholes_in_frame": peak_potholes_in_frame,
-            "total_potholes": peak_potholes_in_frame, # Use peak unique potholes in single view
+            "total_potholes": peak_potholes_in_frame,
             "total_detections_across_video": total_potholes_encountered,
             "low_severity": low_count,
             "medium_severity": med_count,
