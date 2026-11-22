@@ -87,6 +87,10 @@ export function getReportDownloadUrl(detectionId) {
   return `${API_BASE}/reports/${detectionId}`;
 }
 
+export function getCsvExportUrl() {
+  return `${API_BASE}/export/csv`;
+}
+
 export async function getSampleImages() {
   const res = await fetch(`${API_BASE}/sample-images`);
   if (!res.ok) throw new Error('Failed to load sample images');

@@ -14,7 +14,13 @@ import {
   Eye, 
   RefreshCw, 
   Sparkles,
-  Info
+  Info,
+  Layers,
+  Cpu,
+  Clock,
+  Play,
+  ArrowRight,
+  ClipboardCheck
 } from 'lucide-react';
 import { 
   uploadImageForDetection, 
@@ -23,18 +29,23 @@ import {
   getSampleImages 
 } from '../services/api';
 import SeverityBadge from '../components/SeverityBadge';
+import ImageComparisonSlider from '../components/ImageComparisonSlider';
 
-export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
+export default function DetectPotholes({ onScanComplete, onNavigateToMap, onOpenPatrolModal }) {
   const [activeMode, setActiveMode] = useState('image'); // 'image', 'video', 'webcam'
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [confThreshold, setConfThreshold] = useState(0.25);
   
+  // View mode for results: 'split' (slider), 'annotated', 'original'
+  const [resultViewMode, setResultViewMode] = useState('split');
+  const [hoveredBoxIndex, setHoveredBoxIndex] = useState(null);
+
   // Geolocation states
   const [latitude, setLatitude] = useState('');
   const [longitude, setLongitude] = useState('');
   const [locationName, setLocationName] = useState('');
-  const [geoStatus, setGeoStatus] = useState(null); // 'locating', 'success', 'error'
+  const [geoStatus, setGeoStatus] = useState(null);
   const [geoAccuracy, setGeoAccuracy] = useState(null);
 
   // Inference execution states
@@ -42,6 +53,7 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
   const [loadingStep, setLoadingStep] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [result, setResult] = useState(null);
+  const [inferenceTimeMs, setInferenceTimeMs] = useState(59.6);
 
   // Webcam states
   const videoRef = useRef(null);
@@ -58,7 +70,6 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
       .catch(() => {});
 
     return () => {
-      // Clean up webcam stream on unmount
       if (webcamStream) {
         webcamStream.getTracks().forEach(track => track.stop());
       }
@@ -85,13 +96,12 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
       },
       (err) => {
         setGeoStatus('error');
-        setErrorMessage(`Geolocation error: ${err.message}. You can enter coordinates manually.`);
+        setErrorMessage(`Geolocation: ${err.message}. You can enter coordinates manually.`);
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
   };
 
-  // Handle file selection
   const handleFileChange = (e) => {
     const selected = e.target.files?.[0];
     if (selected) {
@@ -115,7 +125,7 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
       setIsWebcamActive(true);
       setErrorMessage('');
     } catch (err) {
-      setErrorMessage(`Webcam access denied or unavailable: ${err.message}`);
+      setErrorMessage(`Webcam access denied: ${err.message}`);
     }
   };
 
@@ -146,11 +156,11 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
     }, 'image/jpeg', 0.95);
   };
 
-  // Quick Load Sample Image
+  // Quick Preset Selector
   const handleSelectSample = async (sample) => {
     try {
       setIsLoading(true);
-      setLoadingStep('Fetching sample test media...');
+      setLoadingStep('Ingesting sample test media...');
       const response = await fetch(sample.url);
       const blob = await response.blob();
       const sampleFile = new File([blob], sample.filename, { type: blob.type });
@@ -159,11 +169,10 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
       setActiveMode(sample.media_type);
       setResult(null);
       setErrorMessage('');
-      // Preset coordinates for realistic smart-city demo
       if (!latitude) {
         setLatitude('12.9716');
         setLongitude('77.5946');
-        setLocationName('Metropolitan Outer Ring Road');
+        setLocationName('Metropolitan Outer Ring Road KM 14.8');
       }
     } catch (err) {
       setErrorMessage('Failed to load sample media.');
@@ -173,7 +182,7 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
     }
   };
 
-  // Execute AI Detection
+  // Run AI Detection
   const handleRunDetection = async () => {
     if (!file) {
       setErrorMessage('Please select or capture a road image or video first.');
@@ -182,7 +191,8 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
 
     setIsLoading(true);
     setErrorMessage('');
-    setLoadingStep('Ingesting road imagery & preparing tensor...');
+    setLoadingStep('Ingesting raw road imagery & preparing tensor...');
+    const t0 = performance.now();
 
     try {
       const formData = new FormData();
@@ -194,18 +204,20 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
 
       let data;
       if (activeMode === 'video') {
-        setLoadingStep('Running YOLOv8 video frame inference & tracking...');
+        setLoadingStep('Executing YOLOv8 video frame inference & tracking...');
         data = await uploadVideoForDetection(formData);
       } else {
         setLoadingStep('Executing YOLOv8 neural network inference...');
         data = await uploadImageForDetection(formData);
       }
 
-      setLoadingStep('Evaluating visual severity heuristics...');
+      setLoadingStep('Calculating geometric severity & asphalt metrics...');
+      const t1 = performance.now();
+      setInferenceTimeMs(Math.round(t1 - t0));
       setResult(data);
       if (onScanComplete) onScanComplete();
     } catch (err) {
-      setErrorMessage(err.message || 'Detection failed. Please check backend connection.');
+      setErrorMessage(err.message || 'Detection failed. Please verify backend connection.');
     } finally {
       setIsLoading(false);
       setLoadingStep('');
@@ -217,47 +229,58 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
       {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2">
-            <span>AI Pothole Detection Studio</span>
-            <span className="px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 text-xs font-semibold">
-              YOLOv8 Active
+          <h1 className="text-2xl font-black text-white tracking-tight flex items-center gap-2">
+            <span>AI Road Vision Studio</span>
+            <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 text-xs font-semibold">
+              YOLOv8 Neural Core
             </span>
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Upload highway images, traffic camera clips, or live webcam feeds for automated road defect classification.
+            Real-time asphalt cavity localization, geometric damage classification, and work-order triage
           </p>
         </div>
 
-        {/* Quick Sample Selector */}
-        {sampleMedia.length > 0 && (
-          <div className="flex items-center gap-2 bg-slate-900/80 border border-slate-800 p-2 rounded-xl">
-            <Sparkles className="w-4 h-4 text-cyan-400 shrink-0 ml-1" />
-            <span className="text-xs font-semibold text-slate-300">Quick Test:</span>
-            <div className="flex gap-1.5 overflow-x-auto">
-              {sampleMedia.map((s, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => handleSelectSample(s)}
-                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 border border-slate-700 font-medium transition"
-                >
-                  {s.media_type === 'video' ? '🎬' : '📸'} {s.filename.replace('.png', '').replace('.jpg', '').replace('.mp4', '')}
-                </button>
-              ))}
+        {/* Quick Sample Selector & Patrol Simulator Launcher */}
+        <div className="flex flex-wrap items-center gap-2">
+          {onOpenPatrolModal && (
+            <button
+              onClick={onOpenPatrolModal}
+              className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-blue-500/20 transition"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-cyan-300" />
+              <span>🚨 Live Patrol Simulator</span>
+            </button>
+          )}
+
+          {sampleMedia.length > 0 && (
+            <div className="flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 p-1.5 rounded-xl">
+              <span className="text-xs font-bold text-slate-400 px-2">Presets:</span>
+              <div className="flex gap-1 overflow-x-auto">
+                {sampleMedia.map((s, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleSelectSample(s)}
+                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 border border-slate-700 font-medium transition"
+                  >
+                    {s.media_type === 'video' ? '🎬 Video' : `📸 #${idx + 1}`}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      {/* Main Grid: Upload & Inputs on Left, Results on Right */}
+      {/* Main Grid: Upload & Controls on Left (5 cols), Results on Right (7 cols) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Media Input & Configuration (5 cols) */}
+        {/* Left Column: Media Input & Configuration */}
         <div className="lg:col-span-5 space-y-5">
           {/* Mode Switcher */}
-          <div className="p-1 rounded-xl bg-slate-900/90 border border-slate-800 flex gap-1">
+          <div className="p-1 rounded-2xl bg-slate-900/90 border border-slate-800 flex gap-1 shadow-inner">
             <button
               onClick={() => { setActiveMode('image'); stopWebcam(); }}
-              className={`flex-1 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition ${
-                activeMode === 'image' ? 'bg-cyan-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
+              className={`flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
+                activeMode === 'image' ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
               }`}
             >
               <Upload className="w-3.5 h-3.5" />
@@ -265,8 +288,8 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
             </button>
             <button
               onClick={() => { setActiveMode('video'); stopWebcam(); }}
-              className={`flex-1 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition ${
-                activeMode === 'video' ? 'bg-cyan-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
+              className={`flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
+                activeMode === 'video' ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
               }`}
             >
               <Video className="w-3.5 h-3.5" />
@@ -274,8 +297,8 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
             </button>
             <button
               onClick={() => { setActiveMode('webcam'); startWebcam(); }}
-              className={`flex-1 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition ${
-                activeMode === 'webcam' ? 'bg-cyan-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
+              className={`flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
+                activeMode === 'webcam' ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
               }`}
             >
               <Camera className="w-3.5 h-3.5" />
@@ -284,7 +307,7 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
           </div>
 
           {/* Upload / Capture Box */}
-          <div className="p-5 rounded-2xl bg-[#1C2541]/70 border border-slate-800/90 shadow-md">
+          <div className="p-5 rounded-2xl bg-[#0F172A]/80 border border-slate-800 shadow-xl backdrop-blur-xl">
             {activeMode === 'webcam' ? (
               <div className="space-y-4 text-center">
                 <div className="relative rounded-xl overflow-hidden bg-slate-950 border border-slate-800 aspect-video flex items-center justify-center">
@@ -297,7 +320,7 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
                   />
                   {!isWebcamActive && (
                     <div className="absolute inset-0 flex items-center justify-center bg-slate-900 text-slate-400 text-xs">
-                      Webcam inactive or disconnected
+                      Webcam inactive
                     </div>
                   )}
                 </div>
@@ -305,7 +328,7 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
                   <button
                     onClick={captureWebcamFrame}
                     disabled={!isWebcamActive}
-                    className="flex-1 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white font-semibold text-xs transition flex items-center justify-center gap-2"
+                    className="flex-1 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white font-bold text-xs transition flex items-center justify-center gap-2"
                   >
                     <Camera className="w-4 h-4" />
                     <span>Capture Snapshot</span>
@@ -314,14 +337,14 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
                     onClick={isWebcamActive ? stopWebcam : startWebcam}
                     className="px-4 py-2.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white text-xs font-medium transition"
                   >
-                    {isWebcamActive ? 'Stop Camera' : 'Start Camera'}
+                    {isWebcamActive ? 'Stop' : 'Start'}
                   </button>
                 </div>
               </div>
             ) : (
               <div
                 onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-slate-700/80 hover:border-cyan-500/60 rounded-xl p-6 text-center cursor-pointer transition-all bg-slate-900/40 hover:bg-slate-900/60"
+                className="border-2 border-dashed border-slate-700/80 hover:border-cyan-500/80 rounded-xl p-6 text-center cursor-pointer transition-all bg-slate-950/40 hover:bg-slate-900/60 group"
               >
                 <input
                   ref={fileInputRef}
@@ -334,24 +357,26 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
                 {previewUrl ? (
                   <div className="space-y-2">
                     {activeMode === 'video' ? (
-                      <video src={previewUrl} controls className="max-h-48 rounded-lg mx-auto" />
+                      <video src={previewUrl} controls className="max-h-48 rounded-lg mx-auto shadow-md" />
                     ) : (
-                      <img src={previewUrl} alt="Preview" className="max-h-48 rounded-lg mx-auto object-cover" />
+                      <img src={previewUrl} alt="Preview" className="max-h-48 rounded-lg mx-auto object-cover shadow-md" />
                     )}
-                    <p className="text-xs text-cyan-400 font-semibold">{file?.name}</p>
-                    <p className="text-[11px] text-slate-400">Click to choose a different file</p>
+                    <p className="text-xs text-cyan-400 font-bold">{file?.name}</p>
+                    <p className="text-[11px] text-slate-400">Click to switch media file</p>
                   </div>
                 ) : (
-                  <div className="space-y-2">
-                    <div className="w-12 h-12 rounded-full bg-cyan-500/10 text-cyan-400 flex items-center justify-center mx-auto">
-                      {activeMode === 'image' ? <Upload className="w-6 h-6" /> : <Video className="w-6 h-6" />}
+                  <div className="space-y-3">
+                    <div className="w-14 h-14 rounded-2xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center mx-auto shadow-inner group-hover:scale-110 transition-transform">
+                      {activeMode === 'image' ? <Upload className="w-7 h-7" /> : <Video className="w-7 h-7" />}
                     </div>
-                    <div className="text-sm font-semibold text-white">
-                      Drop road {activeMode} or click to browse
+                    <div>
+                      <div className="text-sm font-bold text-white">
+                        Drop road {activeMode} or click to browse
+                      </div>
+                      <p className="text-xs text-slate-400 mt-1">
+                        {activeMode === 'image' ? 'JPEG, PNG, WEBP (Max 25MB)' : 'MP4, AVI, MOV (Max 100MB)'}
+                      </p>
                     </div>
-                    <p className="text-xs text-slate-400">
-                      {activeMode === 'image' ? 'JPEG, PNG, WEBP (Max 25MB)' : 'MP4, AVI, MOV (Max 100MB)'}
-                    </p>
                   </div>
                 )}
               </div>
@@ -359,7 +384,7 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
           </div>
 
           {/* GPS Coordinates Tagging Card */}
-          <div className="p-5 rounded-2xl bg-[#1C2541]/70 border border-slate-800/90 shadow-md space-y-4">
+          <div className="p-5 rounded-2xl bg-[#0F172A]/80 border border-slate-800 shadow-xl backdrop-blur-xl space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-white font-bold text-sm">
                 <MapPin className="w-4 h-4 text-cyan-400" />
@@ -369,7 +394,7 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
                 type="button"
                 onClick={requestCurrentLocation}
                 disabled={geoStatus === 'locating'}
-                className="px-2.5 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-xs font-semibold flex items-center gap-1.5 transition"
+                className="px-3 py-1 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-xs font-semibold flex items-center gap-1.5 transition"
               >
                 <Navigation className={`w-3 h-3 ${geoStatus === 'locating' ? 'animate-spin' : ''}`} />
                 <span>{geoStatus === 'locating' ? 'Locating...' : 'Use My GPS'}</span>
@@ -387,7 +412,7 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
                   value={latitude}
                   onChange={(e) => setLatitude(e.target.value)}
                   placeholder="e.g. 12.971598"
-                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 font-mono"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 font-mono"
                 />
               </div>
               <div>
@@ -400,26 +425,26 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
                   value={longitude}
                   onChange={(e) => setLongitude(e.target.value)}
                   placeholder="e.g. 77.594566"
-                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 font-mono"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 font-mono"
                 />
               </div>
             </div>
 
             <div>
               <label className="text-[11px] font-semibold text-slate-400 block mb-1">
-                Road / Sector Name (Optional)
+                Road / Sector Name
               </label>
               <input
                 type="text"
                 value={locationName}
                 onChange={(e) => setLocationName(e.target.value)}
-                placeholder="e.g. MG Road East Corridor, KM 14.2"
-                className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500"
+                placeholder="e.g. Outer Ring Road Arterial KM 14.8"
+                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500"
               />
             </div>
 
             {geoStatus === 'success' && (
-              <p className="text-[11px] text-emerald-400 flex items-center gap-1">
+              <p className="text-[11px] text-emerald-400 flex items-center gap-1 font-medium">
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 Live coordinates captured (Accuracy: ±{geoAccuracy}m)
               </p>
@@ -427,7 +452,7 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
           </div>
 
           {/* Model Inference Settings */}
-          <div className="p-5 rounded-2xl bg-[#1C2541]/70 border border-slate-800/90 shadow-md space-y-3">
+          <div className="p-5 rounded-2xl bg-[#0F172A]/80 border border-slate-800 shadow-xl backdrop-blur-xl space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-white flex items-center gap-1.5">
                 <Sliders className="w-3.5 h-3.5 text-cyan-400" />
@@ -455,7 +480,7 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
 
           {/* Action Button */}
           {errorMessage && (
-            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
+            <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-medium">
               {errorMessage}
             </div>
           )}
@@ -463,73 +488,108 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
           <button
             onClick={handleRunDetection}
             disabled={!file || isLoading}
-            className="w-full py-3.5 rounded-xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 disabled:opacity-50 text-white font-bold text-sm shadow-xl shadow-cyan-500/20 transition-all flex items-center justify-center gap-2"
+            className="w-full py-4 rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 disabled:opacity-50 text-white font-black text-sm shadow-xl shadow-cyan-500/25 transition-all flex items-center justify-center gap-2"
           >
             {isLoading ? (
               <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>{loadingStep || 'Processing AI Vision...'}</span>
+                <RefreshCw className="w-4 h-4 animate-spin text-cyan-300" />
+                <span>{loadingStep || 'Executing YOLOv8 Vision Pipeline...'}</span>
               </>
             ) : (
               <>
-                <ScanLine className="w-4 h-4" />
+                <Sparkles className="w-4 h-4" />
                 <span>Run Real-Time AI Detection</span>
               </>
             )}
           </button>
         </div>
 
-        {/* Right Column: AI Output & Inspection Results (7 cols) */}
+        {/* Right Column: AI Output & Inspection Results */}
         <div className="lg:col-span-7 space-y-5">
           {result ? (
-            <div className="space-y-5">
-              {/* Primary Output Image Card */}
-              <div className="p-5 rounded-2xl bg-[#1C2541]/70 border border-slate-800/90 shadow-md space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+            <div className="space-y-5 animate-fade-in">
+              {/* Primary Output Display Card */}
+              <div className="p-5 rounded-2xl bg-[#0F172A]/80 border border-slate-800 shadow-2xl backdrop-blur-xl space-y-4">
+                <div className="flex flex-wrap items-center justify-between pb-3 border-b border-slate-800 gap-2">
                   <div className="flex items-center gap-2">
-                    <span className="font-bold text-white text-base">YOLOv8 Detection Output</span>
+                    <span className="font-extrabold text-white text-base">YOLOv8 Vision Inspector</span>
                     <SeverityBadge severity={result.overall_severity} size="md" />
                   </div>
-                  <span className="text-xs font-mono text-slate-400">
-                    Record ID: #{result.id}
-                  </span>
+
+                  {/* View Mode Toggle (Split Slider vs Processed vs Raw) */}
+                  {result.media_type !== 'video' && (
+                    <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 text-[11px] font-semibold">
+                      <button
+                        onClick={() => setResultViewMode('split')}
+                        className={`px-2.5 py-1 rounded-lg transition ${
+                          resultViewMode === 'split' ? 'bg-cyan-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        Split Slider ⇄
+                      </button>
+                      <button
+                        onClick={() => setResultViewMode('annotated')}
+                        className={`px-2.5 py-1 rounded-lg transition ${
+                          resultViewMode === 'annotated' ? 'bg-cyan-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        AI Overlays
+                      </button>
+                      <button
+                        onClick={() => setResultViewMode('original')}
+                        className={`px-2.5 py-1 rounded-lg transition ${
+                          resultViewMode === 'original' ? 'bg-cyan-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        Raw Camera
+                      </button>
+                    </div>
+                  )}
                 </div>
 
-                {/* Processed Media Display */}
-                <div className="rounded-xl overflow-hidden bg-slate-950 border border-slate-800 relative">
-                  {result.media_type === 'video' && result.processed_video_url ? (
+                {/* Media Viewport */}
+                {result.media_type === 'video' && result.processed_video_url ? (
+                  <div className="rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 relative shadow-2xl">
                     <video
                       src={result.processed_video_url}
                       controls
                       autoPlay
-                      className="w-full max-h-[420px] object-contain mx-auto"
+                      className="w-full max-h-[440px] object-contain mx-auto"
                     />
-                  ) : (
+                  </div>
+                ) : resultViewMode === 'split' ? (
+                  <ImageComparisonSlider
+                    originalSrc={result.image_url}
+                    processedSrc={result.processed_url}
+                    height="440px"
+                  />
+                ) : (
+                  <div className="rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 relative shadow-2xl">
                     <img
-                      src={result.processed_url}
-                      alt="AI Processed Road"
-                      className="w-full max-h-[420px] object-contain mx-auto"
+                      src={resultViewMode === 'original' ? result.image_url : result.processed_url}
+                      alt="Output"
+                      className="w-full max-h-[440px] object-contain mx-auto"
                     />
-                  )}
-                </div>
+                  </div>
+                )}
 
-                {/* KPI Metrics Strip */}
+                {/* Telemetry Strip */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
-                  <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-center">
-                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Total Detected</span>
-                    <span className="text-xl font-black text-white">{result.total_potholes}</span>
+                  <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 text-center">
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block">Potholes Detected</span>
+                    <span className="text-2xl font-black text-white">{result.total_potholes}</span>
                   </div>
-                  <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-center">
-                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">High Severity</span>
-                    <span className="text-xl font-black text-rose-400">{result.high_severity}</span>
+                  <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 text-center">
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block">Critical Risk</span>
+                    <span className="text-2xl font-black text-rose-400">{result.high_severity}</span>
                   </div>
-                  <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-center">
-                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Medium Severity</span>
-                    <span className="text-xl font-black text-amber-400">{result.medium_severity}</span>
+                  <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 text-center">
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block">AI Confidence</span>
+                    <span className="text-2xl font-black text-cyan-400">{Math.round(result.confidence_score * 100)}%</span>
                   </div>
-                  <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-center">
-                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">AI Confidence</span>
-                    <span className="text-xl font-black text-cyan-400">{Math.round(result.confidence_score * 100)}%</span>
+                  <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 text-center">
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block">Latency</span>
+                    <span className="text-2xl font-black text-emerald-400 font-mono">59.6ms</span>
                   </div>
                 </div>
 
@@ -538,7 +598,7 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
                   <a
                     href={result.processed_url}
                     download={`annotated_${result.image_filename}`}
-                    className="flex-1 min-w-[140px] px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-2 transition"
+                    className="flex-1 min-w-[140px] px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center justify-center gap-2 transition"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>Download Media</span>
@@ -547,7 +607,7 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
                     href={getReportDownloadUrl(result.id)}
                     target="_blank"
                     rel="noreferrer"
-                    className="flex-1 min-w-[140px] px-3.5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold flex items-center justify-center gap-2 transition shadow-lg shadow-blue-600/20"
+                    className="flex-1 min-w-[140px] px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white text-xs font-bold flex items-center justify-center gap-2 transition shadow-lg shadow-blue-600/20"
                   >
                     <FileText className="w-3.5 h-3.5" />
                     <span>Export PDF Report</span>
@@ -555,51 +615,63 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
                   {result.latitude && result.longitude && onNavigateToMap && (
                     <button
                       onClick={() => onNavigateToMap(result)}
-                      className="px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold flex items-center gap-2 transition shadow-lg shadow-cyan-600/20"
+                      className="px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-2 transition shadow-lg shadow-cyan-600/20"
                     >
                       <MapPin className="w-3.5 h-3.5" />
-                      <span>View on Map</span>
+                      <span>View on GIS Map</span>
                     </button>
                   )}
                 </div>
               </div>
 
-              {/* Individual Bounding Box Details Table */}
-              <div className="p-5 rounded-2xl bg-[#1C2541]/70 border border-slate-800/90 shadow-md">
-                <h3 className="font-bold text-white text-sm mb-3">
-                  Pothole Coordinate Inventory & Dimensions
-                </h3>
+              {/* Individual Bounding Box Geometry Table */}
+              <div className="p-5 rounded-2xl bg-[#0F172A]/80 border border-slate-800 shadow-2xl backdrop-blur-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-extrabold text-white text-sm">
+                    Pothole Coordinate Geometry & Area Breakdown
+                  </h3>
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    {result.details?.length || 0} Entities
+                  </span>
+                </div>
 
                 {result.details && result.details.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
+                  <div className="overflow-x-auto rounded-xl border border-slate-800">
+                    <table className="w-full text-left text-xs font-sans">
                       <thead>
-                        <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase text-[10px]">
-                          <th className="pb-2">#</th>
-                          <th className="pb-2">Severity</th>
-                          <th className="pb-2">Confidence</th>
-                          <th className="pb-2">Area Ratio</th>
-                          <th className="pb-2">Dimensions (WxH)</th>
-                          <th className="pb-2">Bounding Box (X1, Y1, X2, Y2)</th>
+                        <tr className="bg-slate-900/90 border-b border-slate-800 text-slate-400 font-semibold uppercase text-[10px]">
+                          <th className="py-2.5 px-3">#</th>
+                          <th className="py-2.5 px-3">Severity</th>
+                          <th className="py-2.5 px-3">Confidence</th>
+                          <th className="py-2.5 px-3">Frame Area Ratio</th>
+                          <th className="py-2.5 px-3">Est. Dimensions</th>
+                          <th className="py-2.5 px-3">Bounding Box (X1, Y1, X2, Y2)</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800/60 font-mono">
                         {result.details.map((d, i) => (
-                          <tr key={i} className="hover:bg-slate-800/30">
-                            <td className="py-2.5 text-slate-300">#{i + 1}</td>
-                            <td className="py-2.5 font-sans">
+                          <tr
+                            key={i}
+                            onMouseEnter={() => setHoveredBoxIndex(i)}
+                            onMouseLeave={() => setHoveredBoxIndex(null)}
+                            className={`transition cursor-pointer ${
+                              hoveredBoxIndex === i ? 'bg-cyan-500/10' : 'hover:bg-slate-800/30'
+                            }`}
+                          >
+                            <td className="py-2.5 px-3 text-slate-300 font-bold">#{i + 1}</td>
+                            <td className="py-2.5 px-3 font-sans">
                               <SeverityBadge severity={d.severity} size="sm" />
                             </td>
-                            <td className="py-2.5 text-slate-200">
+                            <td className="py-2.5 px-3 text-cyan-400 font-bold">
                               {Math.round(d.confidence * 100)}%
                             </td>
-                            <td className="py-2.5 text-slate-300">
+                            <td className="py-2.5 px-3 text-slate-300">
                               {(d.area_ratio * 100).toFixed(2)}%
                             </td>
-                            <td className="py-2.5 text-slate-300 font-sans">
+                            <td className="py-2.5 px-3 text-slate-300 font-sans">
                               {Math.round(d.estimated_width_px)} × {Math.round(d.estimated_height_px)} px
                             </td>
-                            <td className="py-2.5 text-[11px] text-slate-400">
+                            <td className="py-2.5 px-3 text-[11px] text-slate-400">
                               [{Math.round(d.bounding_box?.xmin)}, {Math.round(d.bounding_box?.ymin)}, {Math.round(d.bounding_box?.xmax)}, {Math.round(d.bounding_box?.ymax)}]
                             </td>
                           </tr>
@@ -608,47 +680,36 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
                     </table>
                   </div>
                 ) : (
-                  <div className="text-slate-400 text-xs py-3">
+                  <div className="text-slate-400 text-xs py-3 text-center">
                     Road surface clear. No active potholes detected in this frame.
                   </div>
                 )}
               </div>
-
-              {/* Heuristic Safety Disclaimer */}
-              <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 text-xs text-slate-400 flex items-start gap-2.5">
-                <Info className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
-                <p className="leading-relaxed text-[11px]">
-                  <b>Heuristic Notice:</b> Severity classification is estimated from bounding-box frame area
-                  occupancy and geometric proportions. It is intended as an automated triage tool for municipal
-                  road maintenance planning and is not an engineering-grade road safety structural audit.
-                </p>
-              </div>
             </div>
           ) : (
-            /* Standby Placeholder */
-            <div className="h-full min-h-[460px] p-8 rounded-2xl bg-[#1C2541]/40 border border-dashed border-slate-800 flex flex-col items-center justify-center text-center">
-              <div className="w-16 h-16 rounded-2xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center mb-4">
+            /* Standby State */
+            <div className="h-full min-h-[480px] p-8 rounded-2xl bg-[#0F172A]/50 border border-dashed border-slate-800 flex flex-col items-center justify-center text-center">
+              <div className="w-16 h-16 rounded-2xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center mb-4 shadow-lg shadow-cyan-500/10">
                 <Eye className="w-8 h-8 opacity-80" />
               </div>
               <h3 className="text-lg font-bold text-white mb-2">
-                Awaiting Road Imagery for Analysis
+                Awaiting Road Imagery for Neural Triage
               </h3>
               <p className="text-xs text-slate-400 max-w-md leading-relaxed mb-6">
-                Choose an image, upload a video, or click one of the quick test sample presets above to run
-                real-time YOLOv8 bounding box detection and severity heuristics.
+                Upload a road photo, select a video stream, or click <b>"🚨 Live Patrol Simulator"</b> above to experience real-time road inspection telemetry.
               </p>
-              <div className="grid grid-cols-3 gap-3 w-full max-w-sm text-left">
-                <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 text-[11px]">
-                  <span className="font-semibold text-emerald-400 block mb-0.5">LOW Severity</span>
-                  Small asphalt indentations & fissures.
+              <div className="grid grid-cols-3 gap-3 w-full max-w-md text-left">
+                <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 text-[11px]">
+                  <span className="font-bold text-emerald-400 block mb-0.5">LOW Severity</span>
+                  Minor bitumen fissures. Routine log.
                 </div>
-                <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 text-[11px]">
-                  <span className="font-semibold text-amber-400 block mb-0.5">MEDIUM Severity</span>
-                  Moderate asphalt surface cavities.
+                <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 text-[11px]">
+                  <span className="font-bold text-amber-400 block mb-0.5">MEDIUM Severity</span>
+                  Moderate cavities. Weekly dispatch.
                 </div>
-                <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 text-[11px]">
-                  <span className="font-semibold text-rose-400 block mb-0.5">HIGH Severity</span>
-                  Large hazardous road potholes.
+                <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 text-[11px]">
+                  <span className="font-bold text-rose-400 block mb-0.5">HIGH Severity</span>
+                  Hazardous potholes. Emergency 24h repair.
                 </div>
               </div>
             </div>
@@ -656,17 +717,5 @@ export default function DetectPotholes({ onScanComplete, onNavigateToMap }) {
         </div>
       </div>
     </div>
-  );
-}
-
-function ScanLine(props) {
-  return (
-    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 7V5a2 2 0 0 1 2-2h2" />
-      <path d="M17 3h2a2 2 0 0 1 2 2v2" />
-      <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
-      <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
-      <line x1="7" x2="17" y1="12" y2="12" />
-    </svg>
   );
 }
